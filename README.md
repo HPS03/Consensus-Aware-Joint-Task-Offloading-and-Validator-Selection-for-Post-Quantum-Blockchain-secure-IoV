@@ -1,265 +1,541 @@
-# TaBRL — Trust-Aware Blockchain RL for Secure Task Offloading in Edge-Assisted IoV
+# CoSched-GNN: Consensus-Aware Critical-Path Offloading and Joint PBFT Validator Selection for Edge-Assisted IoV
 
-A re-implementation of Yin et al., *IEEE Communications Standards Magazine* (2026),
-DOI 10.1109/MCOMSTD.2026.3653017, driven by the **Alibaba Cluster Trace v2018**.
+**CoSched-GNN** is a graph-neural-network-based framework for joint DAG task offloading and PBFT validator selection in edge-assisted Internet of Vehicles (IoV) environments.
 
-| File | Purpose |
+The framework addresses the challenge of executing dependency-aware computational tasks while accounting for blockchain consensus latency, heterogeneous edge-server workloads, validator reliability, and post-quantum security.
+
+Unlike conventional task-offloading approaches that optimize computation placement independently of blockchain consensus, CoSched-GNN jointly considers task execution and consensus verification when making scheduling decisions.
+
+The proposed approach uses a heterogeneous graph neural network to learn offloading, validator selection, and CPU-frequency allocation decisions while considering task dependencies, critical-path information, server workloads, and consensus-related delays.
+
+---
+
+## 1. Research Overview
+
+In edge-assisted IoV networks, vehicles generate computationally intensive applications that can be represented as Directed Acyclic Graphs (DAGs). These tasks may be offloaded to nearby Roadside Unit (RSU)-assisted edge servers for execution.
+
+When blockchain-based verification is incorporated into the execution process, completing a computational task requires not only processing time but also consensus verification and confirmation.
+
+This introduces additional challenges:
+
+- Task dependencies restrict the order of execution.
+- Consensus verification introduces additional latency.
+- Validator workloads affect consensus completion time.
+- Selecting an overloaded validator can increase verification delay.
+- Selecting the executor as a validator can create resource contention.
+- Compromised edge servers may manipulate computation results or withhold consensus votes.
+- Classical cryptographic mechanisms may be vulnerable to future quantum attacks.
+
+To address these challenges, this project proposes **CoSched-GNN**, a consensus-aware scheduling framework that jointly optimizes DAG task offloading and PBFT validator selection.
+
+## 2. Proposed Contributions
+
+The main contributions of this research project are as follows.
+
+### 2.1 Consensus-Aware Critical-Path Offloading
+
+Traditional DAG scheduling primarily considers computational execution time, communication delay, and task dependencies.
+
+CoSched-GNN incorporates blockchain consensus delay into DAG scheduling decisions.
+
+The proposed mechanism considers:
+
+- DAG task dependencies.
+- Critical-path rank.
+- Task slack time.
+- Estimated execution completion time.
+- Consensus verification delay.
+- Exposed consensus delay.
+
+Instead of treating consensus delay as an independent overhead, the framework considers how much of the consensus delay is actually exposed on the DAG execution path.
+
+Consensus operations can overlap with the execution of other tasks. Therefore, only the consensus delay that exceeds the available slack contributes additional DAG completion latency.
+
+This enables the scheduling policy to prioritize tasks whose execution or consensus delays are likely to affect the overall DAG completion time.
+
+### 2.2 Post-Offloading-Load-Aware Validator Selection
+
+Validator selection is an important component of blockchain-assisted edge computing.
+
+Selecting validators using only their current workload may result in poor decisions because offloading new subtasks and performing consensus verification both consume edge-server resources.
+
+CoSched-GNN introduces a post-offloading-load-aware validator selection mechanism.
+
+The validator selection policy considers the predicted workload of each server after accounting for:
+
+- Newly assigned computational subtasks.
+- Existing server workload.
+- Consensus verification tasks.
+- CPU resource availability.
+
+This allows the framework to select validators based on their expected workload after the offloading decision rather than relying exclusively on their initial workload.
+
+### 2.3 Executor Exclusion from PBFT Committee Selection
+
+A server executing a subtask of a particular DAG is excluded from the validator committee responsible for verifying that DAG.
+
+This mechanism avoids assigning both computation and verification responsibilities to the same server for the same DAG.
+
+The validator selection process also respects the available committee size and PBFT quorum requirements.
+
+For a PBFT committee:
+
+- Committee size: \(n = 3f + 1\)
+- Required quorum: \(q = 2f + 1\)
+
+where \(f\) represents the maximum number of Byzantine faulty validators tolerated by the committee.
+
+### 2.4 Joint GNN-Based Offloading and Validator Co-Selection
+
+CoSched-GNN uses a heterogeneous graph neural network to represent relationships between DAG subtasks and edge servers.
+
+A shared graph encoder learns representations from task and server information.
+
+The policy incorporates multiple decision heads:
+
+- **Offloading head:** Determines where each DAG subtask should execute.
+- **Validator head:** Selects PBFT committee members sequentially without replacement.
+- **CPU-frequency head:** Determines the local CPU-frequency decision.
+
+A graph-based critic evaluates the resulting decisions.
+
+The complete policy is trained using Proximal Policy Optimization (PPO).
+
+By jointly considering offloading and validator selection, the framework captures the interaction between computational execution and blockchain consensus.
+
+### 2.5 Post-Quantum Cryptographic Security
+
+The framework incorporates post-quantum cryptographic mechanisms to strengthen communication and blockchain verification against quantum-capable adversaries.
+
+The implemented cryptographic mechanisms include:
+
+- **ML-KEM-768:** Post-quantum key establishment.
+- **AES-256-GCM:** Authenticated encryption for vehicle-server communication.
+- **ML-DSA:** Digital signatures for computation results and PBFT votes.
+- **Quorum certificate verification:** Verification of signatures from the required number of distinct validators.
+
+The framework also evaluates security scenarios involving compromised servers, forged quorum certificates, vote withholding, and backhaul message alteration.
+
+---
+
+## 3. System Architecture
+
+The proposed framework consists of the following major components:
+
+1. **Vehicle Layer:** Generates DAG-based computational tasks.
+2. **Edge Computing Layer:** Provides heterogeneous RSU-assisted edge servers for task execution.
+3. **Blockchain Layer:** Performs PBFT-based verification and consensus.
+4. **CoSched-GNN Agent:** Jointly determines task execution locations, validator committees, and CPU-frequency decisions.
+5. **Post-Quantum Security Layer:** Secures communication, computation results, and consensus votes.
+
+### Overall Workflow
+
+1. Vehicles generate computational jobs represented as DAGs.
+2. The system extracts task dependencies, computational requirements, critical-path ranks, and slack information.
+3. The heterogeneous GNN processes task and server graph representations.
+4. The offloading policy assigns DAG subtasks to vehicles or edge servers.
+5. The validator policy selects a PBFT committee using predicted post-offloading workloads.
+6. Servers execute assigned subtasks and participate in consensus according to their selected roles.
+7. Results are verified using cryptographic signatures and quorum certificates.
+8. DAG execution continues as dependency and consensus conditions are satisfied.
+9. Performance and security metrics are collected for evaluation.
+
+---
+
+## 4. Proposed Framework and Methodology
+
+### 4.1 DAG Task Modeling
+
+Each computational job is represented as a Directed Acyclic Graph:
+
+\[
+G=(V,E)
+\]
+
+where:
+
+- \(V\) represents computational subtasks.
+- \(E\) represents dependency relationships between subtasks.
+
+A child subtask cannot begin execution until its required parent subtasks have completed.
+
+The scheduling mechanism considers DAG dependencies and critical-path information when assigning execution resources.
+
+### 4.2 Consensus-Aware Execution Model
+
+Consensus verification is integrated into the execution process.
+
+Each validator receives verification workloads that compete with computational subtasks for available CPU resources.
+
+The verification workload is modeled using:
+
+\[
+c_{\text{cons}} =
+c_{\text{chk}} + 2c_{\text{sig}} +
+2(n-1)c_{\text{vrf}}
+\]
+
+where the terms represent checking, signature, and verification-related computational costs.
+
+A DAG subtask that depends on an offloaded parent must also wait until the required parent result has been committed.
+
+### 4.3 Heterogeneous Graph Representation
+
+The graph representation includes:
+
+**Task-node features:**
+- Computational requirements.
+- Memory requirements.
+- Dependency information.
+- Critical-path rank.
+- Slack information.
+- Estimated execution time.
+- Estimated exposed consensus delay.
+
+**Server-node features:**
+- Available computational capacity.
+- Server workload.
+- Trust information.
+- Processing speed.
+- Communication hop distance.
+- Predicted post-offloading workload.
+
+Message passing between task and server nodes enables the GNN to learn relationships that influence execution and validator selection.
+
+### 4.4 Joint Policy Optimization
+
+The proposed CoSched-GNN policy jointly generates:
+
+\[
+a_t =
+\left(
+a_t^{\text{offload}},
+a_t^{\text{validator}},
+a_t^{\text{frequency}}
+\right)
+\]
+
+The resulting action is evaluated by the critic and optimized through PPO.
+
+Sequential validator selection ensures that the same server is not selected multiple times within a committee.
+
+---
+
+## 5. Experimental Evaluation
+
+The framework is evaluated through multiple experiments to investigate its performance, scalability, and security.
+
+### 5.1 Main Performance Evaluation
+
+The main experiment compares CoSched-GNN with existing and reference scheduling approaches.
+
+The evaluated methods include:
+
+- CoSched-GNN
+- TaBRL
+- FE-CTDE-style approach
+- HGAT-style approach
+- MLP-Joint
+- HEFT + Random
+- DAG-Local
+
+Additional methods can be included through the experiment configuration.
+
+The main evaluation considers:
+
+- DAG completion time.
+- Processing capacity.
+- Energy consumption.
+- Task backlog.
+- Consensus delay.
+- Exposed consensus delay.
+- Validator selection performance.
+- Security-related metrics.
+
+### 5.2 Ablation Study
+
+The ablation experiment investigates the contribution of individual components of CoSched-GNN.
+
+| Experiment | Description |
 |---|---|
-| `tabrl_iov_kaggle.ipynb` | Base paper reproduction, notebook to run on Kaggle (GPU) |
-| `tabrl_iov.py` | Same code as a plain script (`python tabrl_iov.py`) |
-| `tabrl_gnn_kaggle.ipynb` | **Thesis extension** (TaBRL-GNN), self-contained notebook for Kaggle |
-| `tabrl_gnn.py` | Same extension as a plain script (`python tabrl_gnn.py`, imports `tabrl_iov.py`) |
-| `make_notebook.py` | Regenerates both notebooks from the scripts |
+| A1 | Consensus-aware scheduling disabled |
+| A2 | Pre-offloading-load-based validator selection |
+| A3 | Executor exclusion disabled |
+| A4 | Two-stage offloading and rule-based validator selection |
+| A5 | MLP-based encoder instead of GNN |
+| A6 | Non-learning critical-path greedy scheduling |
 
-## Running on Kaggle
-1. Create a notebook and upload `tabrl_iov_kaggle.ipynb` (*File → Import Notebook*).
-2. *Add Input* → your Alibaba cluster trace dataset. The loader searches `/kaggle/input`
-   for `batch_task*.csv` (or `batch_instance*.csv`), with or without a header row.
-   If it can't find the file, add `--data /kaggle/input/<folder>/batch_task.csv` to the command.
-3. *Settings → Accelerator → GPU*. The notebook first writes the code to files, then runs it with
-   the command in its **Run** cell, for example
-   `!python -u tabrl_iov.py --epochs 150 --seed 42 --out /kaggle/working/results`.
-   Edit the command, then *Run All*. The number of epochs is not written in the code: `--epochs`
-   is required, and the scripts stop with an error if it's missing. One epoch is one 300-slot
-   simulation run; 150 epochs take about 45–60 minutes.
-   Options for both scripts: `--epochs` (required), `--seed`, `--vehicles`, `--horizon`,
-   `--eval-windows`, `--data`, `--out`.
-4. The outputs are written to `/kaggle/working/results/`:
-   - `fig3_completion_capacity.png`: Fig. 3 as two side-by-side panels, **Training set | Test set**
-     (completion time and processing capacity bars for each algorithm)
-   - `fig3_paper_style.png`: the same data stacked as in the paper, (a) above (b)
-   - `security_tampered.png`: tampered results each algorithm received from compromised servers
-   - `fig4_backlog_energy.png`: backlog and energy over time for N = 5 and N = 15 vehicles (Fig. 4)
-   - `training_curves.png`, `results.json`
-   - `results.csv`: every Fig. 3 value as a table (also printed at the end of the run):
-     completion time, processing capacity, **system throughput**, energy, offload ratio and
-     tampered results, for the training and test sets
-   - `fig4_values.csv`: the Fig. 4 values for N = 5 and N = 15 (accumulated and mean awaiting
-     task size, and final energy consumption)
+The ablation study helps analyze how individual mechanisms affect the overall scheduling and consensus performance.
 
-   Two throughput measures are reported. **Processing capacity** is the mean over DAGs of
-   size / completion time; it's what the Fig. 3 bars show. **System throughput** is all input
-   bits processed divided by the time until the last DAG finished. When the system keeps up
-   with the arrivals, system throughput is close to the arrival rate for every algorithm,
-   which is why processing capacity is the metric that separates the algorithms.
+### 5.3 Post-Quantum Security Evaluation
 
-**No result is hard-coded.** Every number comes from simulating the trained policies on DAG jobs
-from the trace. Change `CFG["seed"]` to check that the ranking is stable.
+The PQC experiment investigates the security of computation results and PBFT consensus under different cryptographic configurations.
 
-## What is implemented
+The evaluation considers:
 
-**Data (the paper's "Simulation Experiment" section).** Each job's DAG is rebuilt from the
-task names, e.g. `J3_1_2` means task 3 depends on tasks 1 and 2. The code keeps jobs with
-2–8 subtasks. It log-scales CPU work (`instance_num × plan_cpu × duration`) to 0.2–2.4 Gcycles,
-and memory (`instance_num × plan_mem`) to 0.5–6 Mbit of input. Arrival timestamps are
-discretised into 1 s slots, keeping the trace's burstiness. Jobs are split in time order:
-the first 70 % for training, the last 30 % for testing.
+- ECDSA-based signatures.
+- ML-DSA-44.
+- ML-DSA-65.
+- ML-DSA-87.
+- Forged quorum certificate attempts.
+- Compromised validator behavior.
+- Backhaul message tampering.
 
-**System model**
-- **Edge servers:** 4 RSU-co-located edge servers with 2 cores each and heterogeneous speeds
-  (2, 3, 4 and 5 GHz). Each runs a
-  multi-level feedback queue: new subtasks enter the Low queue (0.2 s slice), unfinished work
-  is demoted to Mid (0.5 s) and then High (1 s), and subtasks whose predecessors haven't finished
-  wait in a pending queue.
-- **Vehicles:** 10 by default, each with a CPU of up to 2.5 GHz, moving at 10–25 m/s. The uplink follows a path-loss and
-  shadowing channel, and data crosses a backhaul hop to reach a non-local server.
-- **Blockchain:** a consortium chain with 0.2 s blocks of limited capacity. The confirmation
-  delay is block wait + D_blk/R_blk, paid when a task is registered and again for the
-  proof-of-computation.
-- **Local execution:** delay is b/f and energy is κf³t. A dependency on an unfinished
-  predecessor blocks the head of the local queue.
-- **Lyapunov queues:** each vehicle has a task queue Q and a virtual energy queue E.
-- **Threat model (the paper's security motivation):** one server is compromised, and which
-  one is re-drawn every episode, so no policy can simply memorise it.
-  - It tampers with 35 % of its results. On-chain verification catches the bad proof; the
-    dispute takes 5 more confirmation blocks (`dispute_blocks`), then the subtask is
-    re-executed on the vehicle.
-  - It self-reports only 25 % of its real load.
-  - TaBRL observes the blockchain-audited load and each server's on-chain trust score
-    (verification record, starting at 1 and falling with each failed proof). The baselines see the self-reported load, since the paper says they
-    "do not incorporate trust management". Set `n_malicious=0` to run with no attack.
+The objective is to evaluate whether post-quantum signature verification can prevent forged certificates from being accepted under the simulated adversarial conditions.
 
-**Algorithms**
-- **TaBRL** has a dual fully-connected Actor (one network for offloading and server choice,
-  one for CPU frequency), with target Actors kept by soft update.
-  - Noise-preserving quantisation turns the Actor's output into 32 candidate actions using
-    threshold, order-preserving flips, Gaussian and uniform noise, and structured candidates
-    (whole DAG or heavy subtasks on one trusted server, or all local).
-  - Trust coupling: half of the candidates choose servers with trust-weighted probabilities,
-    π'(j) ∝ π(j)·trust_j^λ. Extra candidates move work off servers whose trust is below 0.8.
-  - The Critic scores the candidates and the best one is executed.
-  - Reward: Lyapunov drift-plus-penalty (V·size/T − Q·local bits − E·energy) plus a trust penalty.
-  - Training uses a replay buffer and TD loss.
-- **MA-LHTO** follows X. He et al., "Real-Time Scheduling of CPU/GPU Heterogeneous Tasks in
-  Dynamic IoT Systems", IEEE TMC 2026, and the authors' released code
-  (github.com/HE-xiao4333/MA-LHTO). One agent per vehicle with an FC actor (two hidden layers, two
-  heads: local-or-server choice per subtask, and CPU frequency) and the paper's local state (eq. 22).
-  Training is centralised: the top-K ranked actions (K = 3/2/1 by slot, as in the authors' code)
-  are scored by a model-based critic with the team reward (eq. 28), and the best one is imitated
-  with cross-entropy, entropy bonus Θ = 0.1 and a Huber loss for the frequency (eq. 36). It uses a
-  soft-updated target actor (ξ = 0.01) and a periodic reset of the last hidden layer (eq. 38).
-  Execution is decentralised: each vehicle uses its own actor. The GPU-node head, the base-station
-  allocation agents and the GPU-fragmentation term are dropped, because this system has no GPUs and
-  servers share their CPU through the MFQ. δ_reset = 1000 updates and σ = 0.01 are assumptions,
-  because the paper doesn't give them.
-- **IOPO** is two-stage: a DQN picks the offloading pattern, then the CPU frequency is set in
-  closed form to minimise delay + energy.
-- **DECO** is TD3: a continuous action quantised to decisions, twin critics and delayed actor updates.
-- **DAG-Local** runs every subtask on the vehicle at maximum frequency.
+### 5.4 Consensus-Hiding Evaluation
 
-**Metrics**
-- *Completion time:* mean DAG completion duration (Complete − arrival), in seconds.
-- *Processing capacity:* mean per-DAG processing rate (size / completion time), in kbit/s.
-  This is the throughput term of problem P2.
+This experiment investigates the relationship between consensus latency and available task slack.
 
-## Differences from the paper (the paper gives no experimental parameters)
-- The absolute values differ from the paper because the paper's system parameters are unknown.
-  Every parameter is in `CFG`.
-- The paper's DAG-Local bar has the lowest completion time. Here, DAG-Local is the slowest
-  because each vehicle has one CPU and no parallel edge capacity.
-- Scenario parameters (vehicle CPU, server speeds, load, dispute delay) were chosen with a small
-  sweep so that the bars stay on a readable scale. With a 1.5 GHz vehicle CPU, DAG-Local
-  takes about 40 s and dwarfs everything else. Every algorithm runs in the same environment.
-- Because the Lyapunov decoupling turns the problem into per-slot problems (P2), the TD target
-  uses γ = 0 (each decision is scored by its own realised reward).
-- TaBRL uses more vehicle energy than the baselines. It keeps more work local, avoiding the
-  untrusted server, which trades energy for lower delay.
+The framework evaluates different hidden consensus fractions and consensus-delay levels.
 
-## Thesis extension: TaBRL-GNN
+The objective is to understand how consensus operations can overlap with DAG execution and how much consensus delay is exposed in the final completion time.
 
-TaBRL's dual-FC Actor flattens each DAG into a zero-padded vector of at most `k_max` subtasks,
-and its output layer is sized for exactly `n_res` servers. So it can't see the dependency edges,
-and it can't run on a larger DAG or a different number of servers without retraining.
-**TaBRL-GNN** (`tabrl_gnn.py`) replaces only the networks:
+### 5.5 Scalability Evaluation
 
-- **Dual GNN Actor:** one graph network for offloading and server choice, one for CPU frequency.
-- **Message passing:** subtask nodes exchange messages along the DAG edges, in both directions.
-  Server nodes carry the audited load, trust, speed and hop distance, and exchange messages with
-  the subtask nodes.
-- **Server choice:** each (subtask, server) pair gets a score, so the actor works with any number
-  of servers.
-- **GNN Critic:** each subtask node also receives its offload decision and the embedding of the
-  server it's sent to.
-- **Unchanged from TaBRL:** NOP candidates, trust coupling, Lyapunov reward, replay buffer,
-  soft-updated target actors and the environment. Any difference in results therefore comes
-  from the network architecture.
-- **Fewer updates:** TaBRL-GNN updates once every 2 completed tasks (`gnn_train_every=2`),
-  half as often as FC TaBRL, to keep the runtime reasonable. This handicaps the GNN; it gives
-  it no advantage.
+The scalability experiment evaluates the ability of the learned scheduling policy to handle different system configurations.
 
-Experiments (`thesis_main`):
+The evaluation considers:
 
-| | Question | Output |
-|---|---|---|
-| **E1** | Base scenario: does the GNN match or beat FC TaBRL and the baselines? | `E1_base/` (same figures as the base notebook, plus TaBRL-GNN) |
-| **E2** | Larger DAGs (up to `k_large=20` subtasks, with arrivals scaled to keep the load comparable); all algorithms retrained | `E2_large_dags.png` |
-| **E3** | Zero-shot scalability: policies trained with N = 10 and M = 4, tested with N = 5–20 vehicles, and (GNN only) M = 3–8 servers | `E3_scale_vehicles.png`, `E3_scale_servers.png` |
+- Different numbers of vehicles.
+- Different numbers of edge servers.
+- Different DAG sizes.
 
-The thesis notebook runs `!python -u tabrl_gnn.py --epochs 150 --seed 42 --experiments e1,e2,e3
---out /kaggle/working/thesis`. It takes the same options as the base script, plus `--experiments`
-(for example `e1,e3`; E3 needs E1), `--gnn-train-every`, `--k-large`, `--scale-veh 5,10,15,20` and
-`--scale-res 3,4,6,8`. All values are printed as tables
-and saved in `E1_base/results.csv`, `E1_base/fig4_values.csv`, `E2_values.csv`,
-`E3_values.csv` and `thesis_results.json`. Nothing is hard-coded: every value comes from
-training and simulation, as in the base reproduction.
+The objective is to investigate whether the graph-based policy can generalize to configurations different from those encountered during training.
 
-## Novelty extension: CoSched-GNN (`cosched_gnn.py`)
+---
 
-Consensus-aware DAG offloading and PBFT validator co-selection, built on the same simulator.
-One heterogeneous-GNN agent decides, in a single action, where each subtask runs and which
-edge servers form the PBFT committee (n = 3f + 1, quorum q = 2f + 1) that verifies the
-offloaded results.
+## 6. Dataset
 
-| ID | Mechanism | Where in the code |
-|---|---|---|
-| N1 | consensus is part of the DAG timing, so only the delay exceeding a subtask's slack lengthens completion; rank and slack are node features | `rank_slack`, `co_graph`, `task_consensus_stats` |
-| N2 | validator head sees each server's load **after** this decision's subtasks and this slot's verification work | `CoEnv.u_post`, `CoSchedGNN.act_joint` |
-| N3 | a server executing any subtask of a DAG is masked out of that DAG's committee; at most M − n servers per DAG | `act_joint` (vmask, `limit`) |
-| N4 | one encoder, offloading head (rank order, load/used features updated per choice), validator head (sequential sampling without replacement, exact log-probability), frequency head, critic; PPO | `CoNet`, `seq_logp`, `ppo_update` |
-| P3 | real post-quantum security: every result, PBFT vote and quorum certificate is signed and verified with ML-DSA (Dilithium, FIPS 204); vehicle-server sessions use ML-KEM-768 (Kyber, FIPS 203) + AES-256-GCM; measured sign/verify times enter the consensus delay | `pq_crypto.py`, `CoEnv._vote`, `_certificate_ok`, `_forge` |
+The experimental environment uses the **Alibaba Cluster Trace v2018** dataset.
 
-**Consensus in the simulator.** Every validator gets a verification job of
-c_cons = c_chk + 2 c_sig + 2(n − 1) c_vrf cycles in its multi-level feedback queue, so
-validation competes with offloaded subtasks for the CPU (a busy validator is slow, and
-validating slows its own queue). A result commits when q validators accept it, after the
-pre-prepare, prepare and commit message rounds; a child subtask starts only after every
-offloaded parent is committed. A compromised server tampers with results (rejected by the
-honest validators, then re-executed on the vehicle) and withholds its votes as a validator.
+The trace provides task and workload information used to construct DAG-based computational jobs.
 
-**Post-quantum security (`pq_crypto.py`, real cryptography).**
+The dataset processing pipeline includes:
 
-| Where | What happens |
+- Extracting task dependencies from task identifiers.
+- Reconstructing DAG structures.
+- Extracting computational and memory requirements.
+- Discretizing arrival timestamps into simulation slots.
+- Separating training and testing data chronologically.
+
+The default configuration uses a 70% training split and a 30% testing split.
+
+The dataset is not included in this repository. Users must obtain the dataset separately and provide the appropriate input path.
+
+---
+
+## 7. Technologies Used
+
+| Category | Technologies |
 |---|---|
-| Vehicle → server | ML-KEM-768 key exchange once per vehicle/server pair, then the task descriptor is sent AES-256-GCM encrypted; the handshake ciphertext (1088 B) is added to the upload time |
-| Executor → committee | the executor signs (ML-DSA) the SHA3-256 digest of its result |
-| Validator | verifies the executor's signature, checks the result, signs its prepare/commit vote |
-| Consumer of a result | accepts it only with a valid quorum certificate: q distinct committee members, every vote verified under that member's public key |
+| Programming Language | Python |
+| Deep Learning | PyTorch |
+| Reinforcement Learning | PPO |
+| Graph Learning | Heterogeneous Graph Neural Networks |
+| Cryptography | ML-DSA, ML-KEM, AES-256-GCM |
+| Blockchain Consensus | PBFT |
+| Data Processing | NumPy, Pandas |
+| Visualization | Matplotlib |
+| Experiment Platform | Kaggle, Jupyter Notebook |
 
-Attacks in the simulator: a compromised server tampers with results, withholds votes, backs
-tampered results as a validator, and after a rejection tries to **forge a quorum certificate**
-(`p_forge`); results can be **altered on the backhaul** (`p_mitm`). With
-`quantum_adversary=True` the attacker can run Shor's algorithm, i.e. recover the secret keys of
-a classical scheme. The `pqc` experiment shows forged certificates being accepted with ECDSA
-and rejected with ML-DSA-44/65/87. Backend: liboqs (Open Quantum Safe), with the `pqcrypto`
-wheel as fallback; `--set crypto=model` skips the cryptographic operations (identical
-simulation outcome, faster) but still uses the measured costs.
+---
 
-**Methods (default, as for the paper).** CoSched-GNN; TaBRL (base paper, 2026); FE-CTDE-style
-(Feng et al., IEEE TMC 2026: joint offloading + consensus, shared actor with central critic,
-committee = n most reliable RESs); HGAT-style (Wu et al., IEEE IoT-J 2025: GNN offloading +
-pre-load committee); MLP-Joint (joint offloading + committee DRL with a flat MLP, improved-PBFT
-line of work; = ablation A5); HEFT + Random (classic list scheduler); DAG-Local (all local, as
-in TaBRL's Fig. 3). TaBRL-GNN, MA-LHTO, IOPO, DECO and CP-Greedy+Post-load can be added with
-`--methods`. Methods that do not choose validators use a random committee fixed for the
-episode. Ablations: A1 N1 off, A2 pre-offloading load, A3 no executor mask, A4 two-stage
-(learned offloading + rule committee), A5 MLP encoder, A6 no learning (CP-Greedy+Post-load, our
-own critical-path rule). `replot.py RUN_FOLDER` redraws the figures of a finished run without
-chosen methods (default: CP-Greedy+Post-load).
+## 8. Project Structure
 
-**Experiments** (`--experiments`): `main` (Fig. 3 style bars, Fig. 4 backlog/energy,
-consensus & security metrics, training curves), `ablation`, `pqc`, `hidden` (hidden
-consensus fraction vs consensus-delay level), `scaling` (zero-shot in N, M and DAG size).
-
+```text
+CoSched-GNN/
+│
+├── cosched_gnn.py
+│   └── Main CoSched-GNN framework and experiments
+│
+├── tabrl_iov.py
+│   └── Supporting IoV simulation environment
+│
+├── tabrl_gnn.py
+│   └── Supporting GNN-based baseline
+│
+├── pq_crypto.py
+│   └── Post-quantum cryptographic operations
+│
+├── test_cosched.py
+│   └── Unit tests and security tests
+│
+├── combine_seeds.py
+│   └── Combines experimental results across seeds
+│
+├── replot.py
+│   └── Regenerates figures from experiment outputs
+│
+├── cosched_gnn_kaggle.ipynb
+│   └── Kaggle execution notebook
+│
+├── requirements.txt
+│   └── Python dependencies
+│
+├── README.md
+│
+├── results/
+│   ├── figures/
+│   └── tables/
+│
+└── .gitignore
 ```
-pip install liboqs-python pqcrypto                      # post-quantum libraries
-python test_cosched.py                                  # unit tests (spec 11.4 + security)
-python cosched_gnn.py --epochs 150 --experiments main,pqc,hidden,scaling --out results_cosched
-python cosched_gnn.py --epochs 150 --experiments ablation --out results_cosched_ablation
-python cosched_gnn.py --epochs 150 --experiments main --seeds 44,45 --servers 10 --set n_veh=15
-python combine_seeds.py results_cosched/seed_*            # mean +- std (same N, M only)
-python cosched_gnn.py --epochs 150 --set bc_epochs=10 ppo_lr=0.0001   # any setting via --set
+
+---
+
+## 9. Installation and Execution
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/YOUR_USERNAME/CoSched-GNN.git
+
+cd CoSched-GNN
 ```
 
-**Metrics.** Besides completion time, capacity, energy and the consensus/security metrics,
-every method is scored with the same **P2 objective** (TaBRL's per-slot drift-plus-penalty:
-throughput minus task-queue and energy-queue pressure, minus deadline and consensus-limit
-penalties), computed from the simulated outcome of each DAG. This is the objective CoSched-GNN
-and TaBRL optimise; the rule baselines minimise completion time only and ignore energy.
+### Step 2: Install Dependencies
 
-**Choices that differ from the spec (and why)**
+```bash
+pip install -r requirements.txt
+```
 
-* M = 8 edge servers: with n = 4 validators and executor exclusion, M = 4 is infeasible.
-  All other environment values are the ones of the TaBRL reproduction (so results stay
-  comparable); the spec's values can be set with `--set`.
-* γ = λ = 0 in PPO (spec: 0.99 / 0.95). TaBRL's Lyapunov drift-plus-penalty decouples the
-  problem per slot, and with 0.99 the agent learned several times slower in our tests.
-  Rollout 512 decisions (spec 2048) for more updates per epoch.
-* The RES nodes also carry the on-chain verification record (trust, as in TaBRL). Without
-  it the agent cannot avoid the compromised server; validators are still chosen without
-  trust scores.
-* A local-CPU-frequency head is added (the spec lists f as a decision variable).
-* The offloading head also gets, per option, the estimated finish time and the estimated
-  exposed consensus delay (the same list-scheduling estimates the rule baselines use, class
-  `EFT`), so the network starts from at least the information the rules have.
-* Graph attention is implemented in plain PyTorch (dense GATv2 per edge type), so no
-  PyTorch Geometric install is needed on Kaggle.
-* `bc_epochs` (default 0) optionally starts training by imitating CP-Greedy before PPO.
-  If used, report it.
-* Signature and verification times are measured on the running machine and converted to
-  cycles with `host_ghz` (default 3.0); signature sizes come from the library.
-* The spec's 8-subtask "driving DAG (A–H)" gives the expected numbers but not the
-  durations; `GANTT_DAG` is a DAG constructed to reproduce all of them, and it is the
-  example in `gantt_example.png`.
-* `CoRES` fixes an MFQ detail of the base simulator: a job whose time slice ends is
-  requeued only after all cores finished the step (before, the second core could run it in
-  the same step, i.e. on two cores at once). The TaBRL reproduction itself is unchanged.
+Install the available post-quantum cryptographic backends:
+
+```bash
+pip install liboqs-python pqcrypto
+```
+
+### Step 3: Run Unit Tests
+
+```bash
+python test_cosched.py
+```
+
+### Step 4: Run Main Experiments
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments main \
+    --out results/main
+```
+
+### Step 5: Run Ablation Experiments
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments ablation \
+    --out results/ablation
+```
+
+### Step 6: Run PQC Experiments
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments pqc \
+    --out results/pqc
+```
+
+### Step 7: Run Consensus-Hiding Experiments
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments hidden \
+    --out results/hidden
+```
+
+### Step 8: Run Scalability Experiments
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments scaling \
+    --out results/scaling
+```
+
+### Run Multiple Experiments Together
+
+```bash
+python cosched_gnn.py \
+    --epochs 150 \
+    --seed 42 \
+    --experiments main,pqc,hidden,scaling \
+    --out results/complete
+```
+
+The experiments support additional configuration options through command-line arguments and the `--set` parameter.
+
+For GPU-based execution, the project can also be run through the provided Kaggle notebook.
+
+---
+
+## 10. Experimental Results and Reproducibility
+
+Experimental outputs include:
+
+- Performance comparison figures.
+- Training curves.
+- Ablation results.
+- PQC security evaluation.
+- Consensus-hiding analysis.
+- Scalability figures.
+- CSV tables.
+- JSON experiment summaries.
+
+Results can be aggregated across multiple random seeds using:
+
+```bash
+python combine_seeds.py results_cosched/seed_*
+```
+
+The experiment scripts generate results through training and simulation rather than relying on hard-coded performance values.
+
+For reproducibility, the random seed and experimental configuration should be reported alongside the results.
+
+---
+
+## 11. Research Significance
+
+CoSched-GNN investigates the interaction between computational scheduling and blockchain consensus in edge-assisted IoV systems.
+
+Its central idea is to treat task execution and consensus verification as interdependent resource-allocation decisions rather than independent optimization problems.
+
+The proposed framework combines:
+
+1. DAG-aware and consensus-aware task scheduling.
+2. Critical-path and slack-based exposed-delay estimation.
+3. Post-offloading-load-aware validator selection.
+4. Executor exclusion during validator selection.
+5. Joint heterogeneous GNN-based policy optimization.
+6. Post-quantum cryptographic protection.
+
+The experimental evaluation investigates the contribution of these mechanisms to scheduling efficiency, scalability, and security.
+
+---
+
+## 12. Future Research Directions
+
+Potential directions for further investigation include:
+
+- Adaptive consensus-aware scheduling under dynamic network conditions.
+- Multi-agent cooperative scheduling across distributed edge servers.
+- More realistic Byzantine attack models.
+- Dynamic PBFT committee formation.
+- Energy-aware post-quantum cryptographic optimization.
+- Evaluation under larger real-world IoV workloads.
+
+---
+
+
+
+
+
